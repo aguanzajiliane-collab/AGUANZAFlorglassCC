@@ -30,7 +30,7 @@ void main() {
       ]
     })));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Online items').last);
+    await tester.tap(find.byType(NavigationDestination).at(2));
     await tester.pumpAndSettle();
     expect(find.text('Steel Square Tube'), findsOneWidget);
     expect(find.text('₱12.50'), findsOneWidget);
@@ -48,7 +48,7 @@ void main() {
           : Future.value(http.Response('{"products":[]}', 200));
     });
     await tester.pumpWidget(FlorglassAluminumApp(client: client));
-    await tester.tap(find.text('Online items').last);
+    await tester.tap(find.byType(NavigationDestination).at(2));
     await tester.pump();
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
     pending.complete(http.Response('Unavailable', 503));
@@ -71,7 +71,7 @@ void main() {
     await tester.pumpWidget(
         FlorglassAluminumApp(client: responseClient({'products': []})));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Services').last);
+    await tester.tap(find.byType(NavigationDestination).at(1));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Add service'));
     await tester.pumpAndSettle();

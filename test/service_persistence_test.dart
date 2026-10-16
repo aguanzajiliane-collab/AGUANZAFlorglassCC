@@ -6,7 +6,6 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:florglassaluminum/main.dart';
-import 'package:florglassaluminum/service_storage.dart';
 
 class ControlledStorage extends ServiceStorage {
   String? snapshot;
@@ -36,7 +35,7 @@ Future<void> launch(WidgetTester tester, {ServiceStorage? storage}) async {
   await tester
       .pumpWidget(FlorglassAluminumApp(client: api(), serviceStorage: storage));
   await tester.pumpAndSettle();
-  await tester.tap(find.text('Services').last);
+  await tester.tap(find.byType(NavigationDestination).at(1));
   await tester.pumpAndSettle();
 }
 
@@ -59,6 +58,23 @@ Future<void> reveal(WidgetTester tester, String name) async {
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  testWidgets('Existing storage key and JSON snapshot remain compatible',
+      (tester) async {
+    const snapshot = '[{"name":"Previously saved service","category":"Custom",'
+        '"description":"Existing customer entry","price":1450.5,"isCustom":true}]';
+    SharedPreferences.setMockInitialValues({
+      'florglassaluminum.services.v1': snapshot,
+    });
+    await launch(tester);
+    expect(find.text('Previously saved service'), findsOneWidget);
+    expect(find.text('From ₱1450.50'), findsOneWidget);
+    expect(find.text('Aluminum Windows'), findsNothing);
+    expect(
+        (await SharedPreferences.getInstance())
+            .getString('florglassaluminum.services.v1'),
+        snapshot);
+  });
 
   testWidgets(
       'Shared preferences: add, reload, delete, reload without duplicates',
@@ -124,7 +140,7 @@ void main() {
     final storage = ControlledStorage()..pendingRead = Completer<String?>();
     await tester.pumpWidget(
         FlorglassAluminumApp(client: api(), serviceStorage: storage));
-    await tester.tap(find.text('Services').last);
+    await tester.tap(find.byType(NavigationDestination).at(1));
     await tester.pump();
     expect(find.text('Loading saved services…'), findsOneWidget);
     expect(

@@ -38,7 +38,7 @@ void main() {
         tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
         1);
 
-    await tester.tap(find.text('Home').last);
+    await tester.tap(find.byType(NavigationDestination).at(0));
     await tester.pumpAndSettle();
     final online = find.widgetWithText(SummaryCard, 'Online items');
     await tester.ensureVisible(online);
@@ -82,12 +82,12 @@ void main() {
       expect(tester.takeException(), isNull);
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Online items').last);
+      await tester.tap(find.byType(NavigationDestination).at(2));
       await tester.pumpAndSettle();
       expect(find.text('Steel Flat Bar'), findsOneWidget);
       expect(find.text('₱450.00'), findsOneWidget);
       expect(tester.takeException(), isNull);
-      await tester.tap(find.text('Home').last);
+      await tester.tap(find.byType(NavigationDestination).at(0));
       await tester.pumpAndSettle();
       expect(find.text('BUILD WITH CONFIDENCE'), findsOneWidget);
     });
@@ -101,7 +101,7 @@ void main() {
     await tester.pumpWidget(FlorglassAluminumApp(
         client: MockClient((_) async => http.Response('Unavailable', 503))));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Online items').last);
+    await tester.tap(find.byType(NavigationDestination).at(2));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     await tester.ensureVisible(find.text('Open offline demo catalog'));
@@ -115,7 +115,7 @@ void main() {
   testWidgets('Deleting every service shows the empty state', (tester) async {
     await tester.pumpWidget(FlorglassAluminumApp(client: catalogClient()));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Services').last);
+    await tester.tap(find.byType(NavigationDestination).at(1));
     await tester.pumpAndSettle();
     for (var i = 0; i < 4; i++) {
       await tester.tap(find.byTooltip('Delete service').first);
@@ -140,7 +140,7 @@ void main() {
           : http.Response('Unavailable', 503);
     })));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Online items').last);
+    await tester.tap(find.byType(NavigationDestination).at(2));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Refresh'));
     await tester.pumpAndSettle();
@@ -154,7 +154,7 @@ void main() {
     await tester.pumpWidget(FlorglassAluminumApp(
         client: MockClient((_) async => http.Response('not JSON', 200))));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Online items').last);
+    await tester.tap(find.byType(NavigationDestination).at(2));
     await tester.pumpAndSettle();
     expect(find.text('Unable to load items'), findsOneWidget);
     expect(find.text('Try again'), findsOneWidget);

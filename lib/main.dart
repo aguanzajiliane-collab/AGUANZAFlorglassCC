@@ -1,7 +1,8 @@
+// 1. Imports and App Entry Point
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
-import 'service_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() => runApp(const FlorglassAluminumApp());
 
@@ -9,77 +10,7 @@ const Color brandOrange = Color(0xFFFF7900);
 const Color ink = Color(0xFF171717);
 const Color canvas = Color(0xFFFFF8F0);
 
-class EmptyState extends StatelessWidget {
-  const EmptyState(
-      {super.key,
-      required this.icon,
-      required this.title,
-      required this.message,
-      this.action});
-  final IconData icon;
-  final String title;
-  final String message;
-  final Widget? action;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 54, color: brandOrange),
-            const SizedBox(height: 12),
-            Text(title,
-                style:
-                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 8),
-            Text(message,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.black54, height: 1.4)),
-            if (action != null) ...[const SizedBox(height: 16), action!],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class FlorglassAluminumApp extends StatelessWidget {
-  const FlorglassAluminumApp({super.key, this.client, this.serviceStorage});
-  final http.Client? client;
-  final ServiceStorage? serviceStorage;
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'FlorglassAluminum',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        scaffoldBackgroundColor: canvas,
-        colorScheme: ColorScheme.fromSeed(seedColor: brandOrange),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: canvas,
-          foregroundColor: ink,
-          elevation: 0,
-          centerTitle: false,
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide.none,
-          ),
-        ),
-      ),
-      home: HomeScreen(client: client, serviceStorage: serviceStorage),
-    );
-  }
-}
-
+// 2. Models (including JSON serialization)
 class ServiceItem {
   ServiceItem({
     required this.name,
@@ -149,6 +80,60 @@ class RemoteProduct {
   }
 }
 
+// 3. Service Storage and JSON Serialization
+/// Stores a complete snapshot, including an intentionally empty service list.
+class ServiceStorage {
+  static const key = 'florglassaluminum.services.v1';
+
+  Future<String?> read() async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.reload();
+    return preferences.getString(key);
+  }
+
+  Future<void> write(String snapshot) async {
+    final preferences = await SharedPreferences.getInstance();
+    if (!await preferences.setString(key, snapshot)) {
+      throw StateError('Local storage rejected the service update.');
+    }
+  }
+}
+
+// 4. Main Application and Navigation
+class FlorglassAluminumApp extends StatelessWidget {
+  const FlorglassAluminumApp({super.key, this.client, this.serviceStorage});
+  final http.Client? client;
+  final ServiceStorage? serviceStorage;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'FlorglassAluminum',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        useMaterial3: true,
+        scaffoldBackgroundColor: canvas,
+        colorScheme: ColorScheme.fromSeed(seedColor: brandOrange),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: canvas,
+          foregroundColor: ink,
+          elevation: 0,
+          centerTitle: false,
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+        ),
+      ),
+      home: HomeScreen(client: client, serviceStorage: serviceStorage),
+    );
+  }
+}
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, this.client, this.serviceStorage});
   final http.Client? client;
@@ -203,6 +188,177 @@ class _HomeScreenState extends State<HomeScreen> {
     fetchRemoteProducts();
   }
 
+  @override
+  Widget build(BuildContext context) {
+    final pages = [
+      dashboardPage(),
+      servicesPage(),
+      onlinePage(),
+      const AboutUsPage(),
+      const ContactUsPage(),
+    ];
+    return Scaffold(
+      appBar: AppBar(
+        title: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.asset(
+                'assets/images/florglassaluminum_logo.png',
+                width: 42,
+                height: 42,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('FlorglassAluminum',
+                      style:
+                          TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                  Text('Glass • Aluminum • Works',
+                      style: TextStyle(fontSize: 11, color: Colors.black54)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      body: SafeArea(child: IndexedStack(index: selectedTab, children: pages)),
+      floatingActionButton: selectedTab == 1
+          ? FloatingActionButton.extended(
+              onPressed:
+                  servicesLoading || servicesSaving || servicesError != null
+                      ? null
+                      : addService,
+              backgroundColor: brandOrange,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.add),
+              label: const Text('Add service'),
+            )
+          : null,
+      bottomNavigationBar: NavigationBar(
+        labelBehavior: MediaQuery.sizeOf(context).width < 420
+            ? NavigationDestinationLabelBehavior.onlyShowSelected
+            : NavigationDestinationLabelBehavior.alwaysShow,
+        selectedIndex: selectedTab,
+        onDestinationSelected: (index) => setState(() => selectedTab = index),
+        indicatorColor: brandOrange.withValues(alpha: 0.18),
+        destinations: const [
+          NavigationDestination(
+              icon: Icon(Icons.home),
+              selectedIcon: Icon(Icons.home),
+              label: 'Home'),
+          NavigationDestination(
+              icon: Icon(Icons.handyman),
+              selectedIcon: Icon(Icons.handyman),
+              label: 'Services'),
+          NavigationDestination(
+              icon: Icon(Icons.inventory_2),
+              selectedIcon: Icon(Icons.inventory_2),
+              label: 'Online items'),
+          NavigationDestination(
+              icon: Icon(Icons.info_outline),
+              selectedIcon: Icon(Icons.info_outline),
+              label: 'About Us'),
+          NavigationDestination(
+              icon: Icon(Icons.contact_mail),
+              selectedIcon: Icon(Icons.contact_mail),
+              label: 'Contact Us'),
+        ],
+      ),
+    );
+  }
+
+// 5. Home Page
+  Widget dashboardPage() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 10, 18, 28),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFFFF8B1F), Color(0xFFEF5B00)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('BUILD WITH CONFIDENCE',
+                  style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2)),
+              const SizedBox(height: 10),
+              const Text('Glass & aluminum\nsolutions for your space.',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 26,
+                      height: 1.15,
+                      fontWeight: FontWeight.w800)),
+              const SizedBox(height: 12),
+              const Text(
+                  'Explore services, manage your list, and browse online product inspiration.',
+                  style: TextStyle(color: Colors.white, height: 1.4)),
+              const SizedBox(height: 18),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                    backgroundColor: Colors.white, foregroundColor: ink),
+                onPressed: () => setState(() => selectedTab = 1),
+                child: const Text('Explore services'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 22),
+        const SectionHeading(
+            title: 'At a glance', subtitle: 'Your workspace overview'),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+                child: SummaryCard(
+                    icon: Icons.handyman_outlined,
+                    label: 'Services',
+                    value: servicesLoading || servicesError != null
+                        ? '…'
+                        : '${services.length}',
+                    color: brandOrange,
+                    onTap: () => setState(() => selectedTab = 1))),
+            const SizedBox(width: 12),
+            Expanded(
+                child: SummaryCard(
+                    icon: Icons.cloud_done_outlined,
+                    label: 'Online items',
+                    value: isLoading ? '…' : '${remoteProducts.length}',
+                    color: const Color(0xFF247A68),
+                    onTap: () => setState(() => selectedTab = 2))),
+          ],
+        ),
+        const SizedBox(height: 24),
+        const SectionHeading(
+            title: 'Popular services',
+            subtitle: 'A quick look at what we offer'),
+        const SizedBox(height: 10),
+        ...services.take(3).map((item) => ServiceTile(item: item)),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () => setState(() => selectedTab = 1),
+          icon: const Icon(Icons.arrow_forward),
+          label: const Text('View all services'),
+        ),
+      ],
+    );
+  }
+
+// 6. Services Page, Restoration, and Saved Updates
   Future<void> restoreServices() async {
     setState(() {
       servicesLoading = true;
@@ -260,6 +416,167 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void addService() {
+    if (servicesLoading || servicesSaving || servicesError != null) return;
+    final nameController = TextEditingController();
+    final categoryController = TextEditingController(text: 'Custom');
+    final descriptionController = TextEditingController();
+    final priceController = TextEditingController();
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Add a service'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: 'Service name')),
+              const SizedBox(height: 10),
+              TextField(
+                  controller: categoryController,
+                  decoration: const InputDecoration(labelText: 'Category')),
+              const SizedBox(height: 10),
+              TextField(
+                  controller: descriptionController,
+                  decoration: const InputDecoration(labelText: 'Description')),
+              const SizedBox(height: 10),
+              TextField(
+                controller: priceController,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration:
+                    const InputDecoration(labelText: 'Starting price (₱)'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: brandOrange),
+            onPressed: () async {
+              if (servicesSaving) return;
+              final name = nameController.text.trim();
+              final price = double.tryParse(priceController.text.trim());
+              if (name.isEmpty ||
+                  price == null ||
+                  !price.isFinite ||
+                  price < 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                      content: Text('Enter a service name and a valid price.')),
+                );
+                return;
+              }
+              final saved = await saveServices([
+                ...services,
+                ServiceItem(
+                  name: name,
+                  category: categoryController.text.trim().isEmpty
+                      ? 'Custom'
+                      : categoryController.text.trim(),
+                  description: descriptionController.text.trim().isEmpty
+                      ? 'Contact us for more details.'
+                      : descriptionController.text.trim(),
+                  price: price,
+                  isCustom: true,
+                )
+              ]);
+              if (!saved || !mounted || !dialogContext.mounted) return;
+              Navigator.pop(dialogContext);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Service added successfully.')),
+              );
+            },
+            child: const Text('Add service'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> deleteService(int index) async {
+    if (servicesLoading || servicesSaving || servicesError != null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete service?'),
+        content: Text('Remove "${services[index].name}" from this list?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      final updated = [...services]..removeAt(index);
+      if (!await saveServices(updated) || !mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Service deleted.')),
+      );
+    }
+  }
+
+  Widget servicesPage() {
+    if (servicesLoading) {
+      return const Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+        CircularProgressIndicator(),
+        SizedBox(height: 14),
+        Text('Loading saved services…')
+      ]));
+    }
+    if (servicesError != null) {
+      return EmptyState(
+        icon: Icons.error_outline,
+        title: 'Unable to load services',
+        message: servicesError!,
+        action: TextButton(
+            onPressed: restoreServices, child: const Text('Try again')),
+      );
+    }
+    return Column(
+      children: [
+        if (servicesSaving) const LinearProgressIndicator(),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(18, 16, 18, 8),
+          child: SectionHeading(
+              title: 'Our services',
+              subtitle: 'Add, review, or remove service records'),
+        ),
+        Expanded(
+          child: services.isEmpty
+              ? const EmptyState(
+                  icon: Icons.construction_outlined,
+                  title: 'No services yet',
+                  message:
+                      'Tap “Add service” to create your first service record.',
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(18, 8, 18, 100),
+                  itemCount: services.length,
+                  itemBuilder: (context, index) => ServiceTile(
+                    item: services[index],
+                    onDelete:
+                        servicesSaving ? null : () => deleteService(index),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+// 7. Online Items Page and API Logic
   // A real HTTP request; bundled assets are offered separately after failures.
   Future<void> fetchRemoteProducts() async {
     if (isLoading) return;
@@ -383,322 +700,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void addService() {
-    if (servicesLoading || servicesSaving || servicesError != null) return;
-    final nameController = TextEditingController();
-    final categoryController = TextEditingController(text: 'Custom');
-    final descriptionController = TextEditingController();
-    final priceController = TextEditingController();
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Add a service'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(labelText: 'Service name')),
-              const SizedBox(height: 10),
-              TextField(
-                  controller: categoryController,
-                  decoration: const InputDecoration(labelText: 'Category')),
-              const SizedBox(height: 10),
-              TextField(
-                  controller: descriptionController,
-                  decoration: const InputDecoration(labelText: 'Description')),
-              const SizedBox(height: 10),
-              TextField(
-                controller: priceController,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration:
-                    const InputDecoration(labelText: 'Starting price (₱)'),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: brandOrange),
-            onPressed: () async {
-              if (servicesSaving) return;
-              final name = nameController.text.trim();
-              final price = double.tryParse(priceController.text.trim());
-              if (name.isEmpty ||
-                  price == null ||
-                  !price.isFinite ||
-                  price < 0) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text('Enter a service name and a valid price.')),
-                );
-                return;
-              }
-              final saved = await saveServices([
-                ...services,
-                ServiceItem(
-                  name: name,
-                  category: categoryController.text.trim().isEmpty
-                      ? 'Custom'
-                      : categoryController.text.trim(),
-                  description: descriptionController.text.trim().isEmpty
-                      ? 'Contact us for more details.'
-                      : descriptionController.text.trim(),
-                  price: price,
-                  isCustom: true,
-                )
-              ]);
-              if (!saved || !mounted || !dialogContext.mounted) return;
-              Navigator.pop(dialogContext);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Service added successfully.')),
-              );
-            },
-            child: const Text('Add service'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> deleteService(int index) async {
-    if (servicesLoading || servicesSaving || servicesError != null) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete service?'),
-        content: Text('Remove "${services[index].name}" from this list?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true && mounted) {
-      final updated = [...services]..removeAt(index);
-      if (!await saveServices(updated) || !mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Service deleted.')),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final pages = [
-      dashboardPage(),
-      servicesPage(),
-      onlinePage(),
-    ];
-    return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.asset(
-                'assets/images/florglassaluminum_logo.png',
-                width: 42,
-                height: 42,
-                fit: BoxFit.cover,
-              ),
-            ),
-            const SizedBox(width: 10),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('FlorglassAluminum',
-                      style:
-                          TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
-                  Text('Glass • Aluminum • Works',
-                      style: TextStyle(fontSize: 11, color: Colors.black54)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-      body: SafeArea(child: IndexedStack(index: selectedTab, children: pages)),
-      floatingActionButton: selectedTab == 1
-          ? FloatingActionButton.extended(
-              onPressed:
-                  servicesLoading || servicesSaving || servicesError != null
-                      ? null
-                      : addService,
-              backgroundColor: brandOrange,
-              foregroundColor: Colors.white,
-              icon: const Icon(Icons.add),
-              label: const Text('Add service'),
-            )
-          : null,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: selectedTab,
-        onDestinationSelected: (index) => setState(() => selectedTab = index),
-        indicatorColor: brandOrange.withValues(alpha: 0.18),
-        destinations: const [
-          NavigationDestination(
-              icon: Icon(Icons.dashboard_outlined),
-              selectedIcon: Icon(Icons.dashboard),
-              label: 'Home'),
-          NavigationDestination(
-              icon: Icon(Icons.construction_outlined),
-              selectedIcon: Icon(Icons.construction),
-              label: 'Services'),
-          NavigationDestination(
-              icon: Icon(Icons.cloud_outlined),
-              selectedIcon: Icon(Icons.cloud),
-              label: 'Online items'),
-        ],
-      ),
-    );
-  }
-
-  Widget dashboardPage() {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 10, 18, 28),
-      children: [
-        Container(
-          padding: const EdgeInsets.all(22),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFFFF8B1F), Color(0xFFEF5B00)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('BUILD WITH CONFIDENCE',
-                  style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.2)),
-              const SizedBox(height: 10),
-              const Text('Glass & aluminum\nsolutions for your space.',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 26,
-                      height: 1.15,
-                      fontWeight: FontWeight.w800)),
-              const SizedBox(height: 12),
-              const Text(
-                  'Explore services, manage your list, and browse online product inspiration.',
-                  style: TextStyle(color: Colors.white, height: 1.4)),
-              const SizedBox(height: 18),
-              FilledButton(
-                style: FilledButton.styleFrom(
-                    backgroundColor: Colors.white, foregroundColor: ink),
-                onPressed: () => setState(() => selectedTab = 1),
-                child: const Text('Explore services'),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 22),
-        const SectionHeading(
-            title: 'At a glance', subtitle: 'Your workspace overview'),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-                child: SummaryCard(
-                    icon: Icons.handyman_outlined,
-                    label: 'Services',
-                    value: servicesLoading || servicesError != null
-                        ? '…'
-                        : '${services.length}',
-                    color: brandOrange,
-                    onTap: () => setState(() => selectedTab = 1))),
-            const SizedBox(width: 12),
-            Expanded(
-                child: SummaryCard(
-                    icon: Icons.cloud_done_outlined,
-                    label: 'Online items',
-                    value: isLoading ? '…' : '${remoteProducts.length}',
-                    color: const Color(0xFF247A68),
-                    onTap: () => setState(() => selectedTab = 2))),
-          ],
-        ),
-        const SizedBox(height: 24),
-        const SectionHeading(
-            title: 'Popular services',
-            subtitle: 'A quick look at what we offer'),
-        const SizedBox(height: 10),
-        ...services.take(3).map((item) => ServiceTile(item: item)),
-        const SizedBox(height: 12),
-        OutlinedButton.icon(
-          onPressed: () => setState(() => selectedTab = 1),
-          icon: const Icon(Icons.arrow_forward),
-          label: const Text('View all services'),
-        ),
-      ],
-    );
-  }
-
-  Widget servicesPage() {
-    if (servicesLoading) {
-      return const Center(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-        CircularProgressIndicator(),
-        SizedBox(height: 14),
-        Text('Loading saved services…')
-      ]));
-    }
-    if (servicesError != null) {
-      return EmptyState(
-        icon: Icons.error_outline,
-        title: 'Unable to load services',
-        message: servicesError!,
-        action: TextButton(
-            onPressed: restoreServices, child: const Text('Try again')),
-      );
-    }
-    return Column(
-      children: [
-        if (servicesSaving) const LinearProgressIndicator(),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(18, 16, 18, 8),
-          child: SectionHeading(
-              title: 'Our services',
-              subtitle: 'Add, review, or remove service records'),
-        ),
-        Expanded(
-          child: services.isEmpty
-              ? const EmptyState(
-                  icon: Icons.construction_outlined,
-                  title: 'No services yet',
-                  message:
-                      'Tap “Add service” to create your first service record.',
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(18, 8, 18, 100),
-                  itemCount: services.length,
-                  itemBuilder: (context, index) => ServiceTile(
-                    item: services[index],
-                    onDelete:
-                        servicesSaving ? null : () => deleteService(index),
-                  ),
-                ),
-        ),
-      ],
-    );
-  }
-
   Widget onlinePage() {
     if (isLoading && remoteProducts.isEmpty) {
       return const Center(
@@ -767,6 +768,252 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
         ),
       ],
+    );
+  }
+}
+
+// 8. About Us Page
+class AboutUsPage extends StatelessWidget {
+  const AboutUsPage({super.key});
+
+  @override
+  Widget build(BuildContext context) => ListView(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 28),
+        children: const [
+          Text('About Us',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+          SizedBox(height: 6),
+          Text('Flor Glass & Aluminum Works',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          SizedBox(height: 18),
+          BusinessInfoCard(
+              title: 'Business overview',
+              icon: Icons.storefront_outlined,
+              child: Text(
+                  'Flor Glass & Aluminum Works is a local fabrication and installation business offering customized glass, aluminum, and metal works for residential and commercial properties.',
+                  style: TextStyle(height: 1.5))),
+          BusinessInfoCard(
+              title: 'Our location',
+              icon: Icons.location_on_outlined,
+              child: Text('Villanueva, Tubigon, Bohol, Philippines.',
+                  style: TextStyle(height: 1.5))),
+          Text('Products and services offered',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+          SizedBox(height: 14),
+          BusinessInfoCard(
+              title: 'Windows and doors',
+              icon: Icons.window_outlined,
+              child: Text(
+                  'Customized glass and aluminum windows and doors for residential and commercial spaces.',
+                  style: TextStyle(height: 1.5))),
+          BusinessInfoCard(
+              title: 'Sliding windows and doors',
+              icon: Icons.door_sliding_outlined,
+              child: Text(
+                  'Customized sliding glass and aluminum windows and doors.',
+                  style: TextStyle(height: 1.5))),
+          BusinessInfoCard(
+              title: 'Shower enclosures',
+              icon: Icons.shower_outlined,
+              child: Text(
+                  'Glass enclosures, partitions, and fixtures made to suit the space.',
+                  style: TextStyle(height: 1.5))),
+          BusinessInfoCard(
+              title: 'Aluminum fabrication',
+              icon: Icons.construction_outlined,
+              child: Text(
+                  'Custom aluminum frames, cabinets, and fabricated components.',
+                  style: TextStyle(height: 1.5))),
+          BusinessInfoCard(
+              title: 'Steel and stainless metal works',
+              icon: Icons.handyman_outlined,
+              child: Text(
+                  'Customized steel and stainless metal fabrication and installation.',
+                  style: TextStyle(height: 1.5))),
+          BusinessInfoCard(
+              title: 'Customized installation services',
+              icon: Icons.home_repair_service_outlined,
+              child: Text(
+                  'Installation services tailored to residential and commercial spaces.',
+                  style: TextStyle(height: 1.5))),
+          BusinessInfoCard(
+              title: 'Proposed mission',
+              icon: Icons.flag_outlined,
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                        'Proposed application copy — not a verified official company statement.',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.black54, height: 1.5)),
+                    SizedBox(height: 8),
+                    Text(
+                        'To provide thoughtfully crafted glass, aluminum, and metal solutions that support safe, functional, and welcoming homes and businesses.',
+                        style: TextStyle(height: 1.5)),
+                  ])),
+        ],
+      );
+}
+
+// 9. Contact Us Page
+class ContactUsPage extends StatefulWidget {
+  const ContactUsPage({super.key});
+
+  @override
+  State<ContactUsPage> createState() => _ContactUsPageState();
+}
+
+class _ContactUsPageState extends State<ContactUsPage> {
+  final formKey = GlobalKey<FormState>();
+  final name = TextEditingController();
+  final contact = TextEditingController();
+  final message = TextEditingController();
+
+  @override
+  void dispose() {
+    name.dispose();
+    contact.dispose();
+    message.dispose();
+    super.dispose();
+  }
+
+  void submit() {
+    if (!formKey.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
+    formKey.currentState!.reset();
+    name.clear();
+    contact.clear();
+    message.clear();
+    showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+              title: const Text('Demo inquiry — not sent'),
+              content: const Text(
+                  'Your entries passed validation. This demonstration has no messaging backend: no inquiry was sent or saved. The form has been cleared.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('OK'))
+              ],
+            ));
+  }
+
+  @override
+  Widget build(BuildContext context) => ListView(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 28),
+        children: [
+          const Text('Contact Us',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          const Text('Flor Glass & Aluminum Works',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 18),
+          const BusinessInfoCard(
+              title: 'Contact Information',
+              icon: Icons.contact_mail_outlined,
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Location: Villanueva, Tubigon, Bohol, Philippines',
+                        style: TextStyle(height: 1.5)),
+                    SizedBox(height: 8),
+                    Text(
+                        'No verified phone number, email address, or business hours are currently available in this app.',
+                        style: TextStyle(color: Colors.black54, height: 1.5)),
+                  ])),
+          BusinessInfoCard(
+              title: 'Demo inquiry form',
+              icon: Icons.edit_note_outlined,
+              child: Form(
+                  key: formKey,
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text(
+                            'Practice form only. Submitting validates your entries; it does not send or save an inquiry.',
+                            style: TextStyle(height: 1.5)),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                            controller: name,
+                            textCapitalization: TextCapitalization.words,
+                            decoration:
+                                const InputDecoration(labelText: 'Full Name'),
+                            validator: (v) => v == null || v.trim().isEmpty
+                                ? 'Enter your full name.'
+                                : null),
+                        const SizedBox(height: 14),
+                        TextFormField(
+                            controller: contact,
+                            keyboardType: TextInputType.emailAddress,
+                            decoration: const InputDecoration(
+                                labelText: 'Email Address'),
+                            validator: (v) {
+                              final value = (v ?? '').trim();
+                              if (value.isEmpty) {
+                                return 'Enter your email address.';
+                              }
+                              final email =
+                                  RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+                                      .hasMatch(value);
+                              return email
+                                  ? null
+                                  : 'Enter a valid email address.';
+                            }),
+                        const SizedBox(height: 14),
+                        TextFormField(
+                            controller: message,
+                            minLines: 3,
+                            maxLines: 6,
+                            keyboardType: TextInputType.multiline,
+                            decoration: const InputDecoration(
+                                labelText: 'Inquiry Message'),
+                            validator: (v) => v == null || v.trim().isEmpty
+                                ? 'Enter your inquiry message.'
+                                : null),
+                        const SizedBox(height: 18),
+                        FilledButton.icon(
+                            onPressed: submit,
+                            icon: const Icon(Icons.fact_check_outlined),
+                            label: const Text('Submit Demo Inquiry')),
+                      ]))),
+        ],
+      );
+}
+
+// 10. Reusable Widgets and Helpers
+class EmptyState extends StatelessWidget {
+  const EmptyState(
+      {super.key,
+      required this.icon,
+      required this.title,
+      required this.message,
+      this.action});
+  final IconData icon;
+  final String title;
+  final String message;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 54, color: brandOrange),
+            const SizedBox(height: 12),
+            Text(title,
+                style:
+                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 8),
+            Text(message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.black54, height: 1.4)),
+            if (action != null) ...[const SizedBox(height: 16), action!],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -990,4 +1237,35 @@ class RemoteProductTile extends StatelessWidget {
       ),
     );
   }
+}
+
+class BusinessInfoCard extends StatelessWidget {
+  const BusinessInfoCard(
+      {super.key,
+      required this.title,
+      required this.icon,
+      required this.child});
+  final String title;
+  final IconData icon;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+            color: Colors.white, borderRadius: BorderRadius.circular(18)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(icon, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 12),
+            Expanded(
+                child: Text(title,
+                    style: const TextStyle(
+                        fontSize: 17, fontWeight: FontWeight.w800))),
+          ]),
+          const SizedBox(height: 12),
+          child,
+        ]),
+      );
 }
